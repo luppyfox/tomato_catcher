@@ -40,10 +40,10 @@ PID pid_L;
 PID pid_R;
 float kp_R = 1.8;//1.8
 float ki_R = 0.001;//0.001
-float kd_R = 10;//8
+float kd_R = 8;//10
 float kp_L = 1.8;//1.8
 float ki_L = 0.0065;//0.001
-float kd_L = 10;//8
+float kd_L = 8;//10
 float er_L, er_R, er_L_prev, er_R_prev;
 float vL_pid = 0;
 float vR_pid = 0;
@@ -113,7 +113,7 @@ void loop()
           get_positionR = 0;
         }
         currentMillis = millis();
-        previousMillis = millis() - 1;
+//        previousMillis = millis();
         enc_L.pulse = 0; //reset encoder pulse to 0
         enc_R.pulse = 0; //reset encoder pulse to 0
         vel_L.previous_cm = 0;
@@ -168,10 +168,8 @@ void loop()
       er_L_prev = er_L;
       er_R_prev = er_R;
       previousMillis = currentMillis;
-      //      float PMW_R = motor_R.cal_pwm_R(vR_pid);
-      //      float PMW_L = motor_L.cal_pwm_L(vL_pid);
-      long PMW_R = motor_R.cal_pwm_R(vR_pid);
-      long PMW_L = motor_L.cal_pwm_L(vL_pid);
+      float PMW_R = motor_R.cal_pwm_R(vR_pid);
+      float PMW_L = motor_L.cal_pwm_L(vL_pid);
       //      if (abs(PMW_R) > 25 || abs(PMW_L) > 25) {
       //        PMW_R = 25;
       //        PMW_L = 25;

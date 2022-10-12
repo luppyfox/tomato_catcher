@@ -11,6 +11,9 @@ Motor motorr;
 
 Encoder encl;
 Encoder encr;
+float pprR = 2488.2; //average pulse from encoder or ppr
+float pprL = 2470.2; //average pulse from encoder or ppr
+float wheel_circumference = 68.5; //cm
 
 float kp = 2.0;
 float ki = 0.01;
@@ -21,6 +24,11 @@ PID rightPID(kp, ki, kd, MAX_PWM);
 
 volatile int counterLeft = 0;  // This variable will increase or decrease depending on the rotation of encoder
 volatile int counterRight = 0; // This variable will increase or decrease depending on the rotation of encoder
+
+const unsigned int WordLength = 4;
+int getposition;
+int pwmL = 0;
+int pwmR = 0;
 
 void enc_left()
 {
@@ -38,7 +46,7 @@ velocity v_target;
 pid_param k;
 pwm p;
 
-int mode = 1; // 0: PWM, 1: PID
+int mode = 0; // 0: PWM, 1: PID
 
 void setup()
 {
@@ -48,125 +56,119 @@ void setup()
     ;
   // waitStartCommand("mobile");
   digitalWrite(13, 1);
-  motorl.init(5, 7, 4, 20);
-  motorr.init(6, 9, 8, 20);
+  motorl.init(5, 7, 4, 150);
+  motorr.init(6, 9, 8, 150);
 
-  encl.init(2, A1, false);
-  encr.init(3, A0, true);
+  encl.init(2, A1, false, pprL, wheel_circumference);
+  encr.init(3, A0, true, pprR, wheel_circumference);
 
   attachInterrupt(digitalPinToInterrupt(encl.ena), enc_left, RISING);
   attachInterrupt(digitalPinToInterrupt(encr.ena), enc_right, RISING);
 }
 
-int c = 0;
 const int interval = 50;
 long previousMillis = 0;
 long currentMillis = 0;
-float setPoint = -5.0;
-
-float Position = 0;
-const unsigned int WordLength = 1;
+//velocity set point
+float setPoint = -5.0;//-20.0
 
 void loop()
 {
-    while(1)
-      {
-      boolean EndCommand = 0;
-      while(Serial.available()>0)
-        {
-        static char Command[WordLength];
-        static unsigned int WordPosition = 0;
-        char InByte = Serial.read();
-        if(InByte != '\n')
-          {
-          Command[WordPosition] = InByte;
-          WordPosition++;
-          }
-        else
-          {
-          Command[WordPosition] = '\0';
-          Serial.print("input = ");
-          Serial.println(Command);
-          int Data0 = (Command[0]);
-          int getPosition;
-          if(Data0 == 43)
-            {
-            getPosition = 2000;
-            }
-          else if (Data0 == 45)
-            {
-            getPosition = -2000;
-            }
-          EndCommand = 1;
-          }
-        if(EndCommand == 1)
-          {
-          break;
-          }
-        }
-      }
-  float getPosition = 2000; //test send value
-
-  Position = getPosition / 1000 * 1350; //change mm unit to m unit
-  currentMillis = millis();
-
-  if (c > Position) //1350 unit = 1m
+  while (1)
   {
-    motorl.rotate(0);
-    motorr.rotate(0);
-    Serial.print("StandBy");
-  }
-  else
-  {
-    if (currentMillis - previousMillis > interval)
+    boolean EndCommand = 0;
+    while (Serial.available() > 0)
     {
-      float deltaT = currentMillis - previousMillis;
-      previousMillis = currentMillis;
-      motorl.cal_velocity(encl.position);
-      motorr.cal_velocity(encr.position);
-      float v_l = motorl.v * 100;
-      float v_r = motorr.v * 110;
-      int pwmL = leftPID.evalu(v_l, setPoint, deltaT);
-      int pwmR = rightPID.evalu(v_r, setPoint, deltaT);
-
-      motorl.rotate(pwmL);
-      motorr.rotate(pwmR+15);
-
-      Serial.print(v_l);
-      Serial.print("\t");
-      Serial.print(v_r);
-      Serial.print("\t");
-      Serial.println(setPoint);
-
-      c += interval;
+      static char Command[WordLength];
+      static unsigned int WordPosition = 0;
+      char InByte = Serial.read();
+      if (InByte != '\n')
+      {
+        Command[WordPosition] = InByte;
+        WordPosition++;
+      }
+      else
+      {
+        Command[WordPosition] = '\0';
+        //Serial.print("input = ");
+        //Serial.println(Command);
+        int Data0 = (Command[0]);
+        int Data1 = (Command[1] - '0') * 100;
+        int Data2 = (Command[2] - '0') * 10;
+        int Data3 = (Command[3] - '0');
+        if (Data0 == 43)
+        {
+          getposition = Data1 + Data2 + Data3;
+        }
+        else if (Data0 != 43)
+        {
+          getposition = 0;
+        }
+        EndCommand = 1;
+        break;
+      }
+    }
+    if (EndCommand == 1)
+    {
+      break;
     }
   }
+  currentMillis = millis();
+  previousMillis = currentMillis;
+  while (1)
+  {
+    currentMillis = millis();
+    
+    if (currentMillis - previousMillis > interval)
+    {
+      if (encl.cal_cm() <= getposition || encr.cal_cm() <= getposition )
+      {
+        float deltaT = currentMillis - previousMillis;
+        previousMillis = currentMillis;
+        motorl.cal_velocity(encl.position);
+        motorr.cal_velocity(encr.position);
+        float v_l = motorl.v * 100.0;
+        float v_r = motorr.v * 100.0;
+        pwmL = leftPID.evalu(v_l, setPoint, deltaT);
+        pwmR = rightPID.evalu(v_r, setPoint, deltaT);
+        if (encl.cal_cm() <= getposition)
+        {
+          motorl.rotate(pwmL);
+          //          Serial.println(encl.cal_cm());
+        }
+        else
+        {
+          motorl.rotate(0);
+        }
+        if (encr.cal_cm() <= getposition)
+        {
+          motorr.rotate(pwmR * (-1));
+          //          Serial.println(encr.cal_cm());
+        }
+        else
+        {
+          motorr.rotate(0);
+        }
 
-  // while (c < 500)
-  // {
-  //   motorl.rotate(100);
-  //   motorl.cal_velocity(encl.position);
-  //   Serial.println(motorl.v * 100);
-  //   delay(20);
-  //   c++;
-  // }
-
-  // eventHandler(v_target, k, p, mode);
-
-  // if(mode == 0)
-  // {
-  //   v_target.wl = 0;
-  //   v_target.wr = 0;
-  // }
-  // else if (mode == 1)
-  // {
-  //   v = v_target;
-  // }
-
-  // sentMsg(v, k, p);
-  // // Serial.println("X");
-  // delay(100);
+//        Serial.print(v_l);
+//        Serial.print("\t");
+//        Serial.print(v_r);
+//        Serial.print("\t");
+//        Serial.println(setPoint);
+      }
+    }
+    if (encl.cal_cm() >= getposition && encr.cal_cm() >= getposition )
+    {
+      encl.cm = 0;
+      encr.cm = 0;
+      encl.position = 0;
+      encr.position = 0;
+      pwmL = 0;
+      pwmR = 0;
+      motorl.rotate(0);
+      motorr.rotate(0);
+      Serial.println("StandBy");
+      break;
+    }
+  }
 }
-/*
-  {"vl":1.00,"vr":2.00}
-*/

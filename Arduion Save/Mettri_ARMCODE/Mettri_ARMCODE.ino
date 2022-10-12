@@ -120,17 +120,17 @@ void loop()
       int Data9 = (Command[9]-'0')*100;
       int Data10 = (Command[10]-'0')*10;
       int Data11 = (Command[11]-'0');
-      double RawDataZ;
+//      double RawDataZ;
       double DataZ;
       if(Data8 == 43)
         { 
-        RawDataZ = Data9+Data10+Data11;
+        DataZ = Data9+Data10+Data11;
         }
       else if (Data8 == 45)
         { 
-        RawDataZ = (-1)*(Data9+Data10+Data11);
+        DataZ = (-1)*(Data9+Data10+Data11);
         }
-      DataZ = RawDataZ-(0.015*RawDataZ)+0.0357;
+//      DataZ = RawDataZ-(0.015*RawDataZ)+0.0357;
       Serial.print("Z = ");
       Serial.println(DataZ);
       int Theta1;
@@ -226,7 +226,7 @@ void loop()
 
 void set0()
   {
-  stepper1.setMaxSpeed(4000);
+  stepper1.setMaxSpeed(2500);
   stepper1.setAcceleration(SDAc);
   stepper2.setMaxSpeed(500);
   stepper2.setAcceleration(SDAc);
@@ -322,7 +322,7 @@ void HighRunto (float Hig, int Speed, int Acceleration)
   float HigToStepRate, Step1;
   stepper1.setMaxSpeed(Speed);
   stepper1.setAcceleration(Acceleration);
-  HigToStepRate = (-1)*(379.81308411);   //10160step/26.75mm = 379.81308411step/1mm
+  HigToStepRate = -186.776242;   //10000step/53.54mm = 186.776242step/1mm
   Step1 = Hig*HigToStepRate;
   stepper1.moveTo(Step1);
   while (stepper1.distanceToGo()!=0)
