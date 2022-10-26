@@ -1,3 +1,4 @@
+from inputs import get_gamepad
 import serial as sr
 import random as rd
 import cv2 
@@ -5,6 +6,104 @@ import math as m
 import time
 import numpy as np
 import pyrealsense2 as rs
+import threading
+from threading import Thread
+
+class XboxController(object):
+
+    MAX_TRIG_VAL = m.pow(2, 8)
+    MAX_JOY_VAL = m.pow(2, 15)
+
+    def __init__(self):
+
+        self.LeftJoystickY = 0
+        self.LeftJoystickX = 0
+        self.RightJoystickY = 0
+        self.RightJoystickX = 0
+        self.LeftTrigger = 0
+        self.RightTrigger = 0
+        self.LeftBumper = 0
+        self.RightBumper = 0
+        self.A = 0
+        self.X = 0
+        self.Y = 0
+        self.B = 0
+        self.LeftThumb = 0
+        self.RightThumb = 0
+        self.Back = 0
+        self.Start = 0
+        self.LeftDPad = 0
+        self.RightDPad = 0
+        self.UpDPad = 0
+        self.DownDPad = 0
+        self._monitor_thread = threading.Thread(target=self._monitor_controller, args=())
+        self._monitor_thread.daemon = True
+        self._monitor_thread.start()
+
+
+    def read(self):
+        RJoyX = self.RightJoystickX
+        RJoyY = self.RightJoystickY
+        y = self.Y
+        if RJoyX <= 0.05 and RJoyX >= -0.05 :
+            RJoyX = 0
+        elif RJoyX >= 0.995 :
+            RJoyX = 1
+        elif RJoyX <= -0.995 :
+            RJoyX = -1
+        if RJoyY <= 0.05 and RJoyY >= -0.05 :
+            RJoyY = 0
+        elif RJoyY >= 0.995 :
+            RJoyY = 1
+        elif RJoyY <= -0.995 :
+            RJoyY = -1
+        return [RJoyX, RJoyY, y]
+
+
+    def _monitor_controller(self):
+        while True:
+            events = get_gamepad()
+            for event in events:
+                if event.code == 'ABS_Y':
+                    self.LeftJoystickY = event.state / XboxController.MAX_JOY_VAL
+                elif event.code == 'ABS_X':
+                    self.LeftJoystickX = event.state / XboxController.MAX_JOY_VAL
+                elif event.code == 'ABS_RY':
+                    self.RightJoystickY = event.state / XboxController.MAX_JOY_VAL
+                elif event.code == 'ABS_RX':
+                    self.RightJoystickX = event.state / XboxController.MAX_JOY_VAL 
+                elif event.code == 'ABS_Z':
+                    self.LeftTrigger = event.state / XboxController.MAX_TRIG_VAL 
+                elif event.code == 'ABS_RZ':
+                    self.RightTrigger = event.state / XboxController.MAX_TRIG_VAL
+                elif event.code == 'BTN_TL':
+                    self.LeftBumper = event.state
+                elif event.code == 'BTN_TR':
+                    self.RightBumper = event.state
+                elif event.code == 'BTN_SOUTH':
+                    self.A = event.state
+                elif event.code == 'BTN_WEST':
+                    self.X = event.state
+                elif event.code == 'BTN_NORTH':
+                    self.Y = event.state
+                elif event.code == 'BTN_EAST':
+                    self.B = event.state
+                elif event.code == 'BTN_THUMBL':
+                    self.LeftThumb = event.state
+                elif event.code == 'BTN_THUMBR':
+                    self.RightThumb = event.state
+                elif event.code == 'BTN_SELECT':
+                    self.Back = event.state
+                elif event.code == 'BTN_START':
+                    self.Start = event.state
+                elif event.code == 'BTN_TRIGGER_HAPPY1':
+                    self.LeftDPad = event.state
+                elif event.code == 'BTN_TRIGGER_HAPPY2':
+                    self.RightDPad = event.state
+                elif event.code == 'BTN_TRIGGER_HAPPY3':
+                    self.UpDPad = event.state
+                elif event.code == 'BTN_TRIGGER_HAPPY4':
+                    self.DownDPad = event.state
 
 class DepthCamera:
     def __init__(self):
@@ -38,8 +137,19 @@ class DepthCamera:
     def release(self):
         self.pipeline.stop()
 
+def JoyRead():
+    joy = XboxController()
+    global SwitchMode
+    global j
+    SwitchMode = 0
+    while True:
+        j = joy.read()
+        if j[2] == 1 :
+            SwitchMode = 1
+        time.sleep(0.005)
+
 ser1 = sr.Serial('COM6', 9600, timeout=5)
-ser2 = sr.Serial('COM7', 9600, timeout=5)
+ser2 = sr.Serial('COM7', 115200, timeout=5)
 
 Conf_threshold = 0.5
 NMS_threshold = 0.5
@@ -60,9 +170,12 @@ i = 0
 StartPoint = []
 EndPoint = []
 
-Endprocess = 0
+threadlist = []
+threadlist.append(Thread(target=JoyRead))
+for t in threadlist:
+  t.start()
 
-dc = DepthCamera()
+Max_PMW = 50
 
 while True :
     Stopby = ser1.readline().decode("utf-8").strip()
@@ -70,148 +183,210 @@ while True :
         print(Stopby)
         break
 
-while True:
-    ret, Rawdepf, Rawcolf = dc.get_frame()
-    if ret == False:
-        break
-    Fsdepf = Rawdepf[100:620, 132:1148]
-    Fscolf = cv2.resize(Rawcolf, [1016,520])
-    Depf = Fsdepf[20:500, 188:828]
-    Colf = Fscolf[20:500, 188:828]
-    # Depf = cv2.resize(Rsdepf, [320,320])
-    # Colf = cv2.resize(Rscolf, [320,320])
-    Def = 1
-    ReCheck = 1
-    endcommand = 0
-    j = 0
-    for j in range(i) :
-        cv2.rectangle(Colf, StartPoint[j], EndPoint[j], (0, 255, 0), -1)
+while True :
     time.sleep(1)
-    classes, scores, boxes = model.detect(Colf, Conf_threshold, NMS_threshold)
-    for (classid, score, box) in zip(classes, scores, boxes):
-        Def = 0
-        color = COLORS[int(classid) % len(COLORS)]
-        label = "%s : %f" % (class_name[classid], score)
-        cv2.rectangle(Colf, box, color, 2)
-        cv2.putText(Colf, label, (box[0], box[1]-10),cv2.FONT_HERSHEY_COMPLEX, 0.3, color, 1)
-        x, y, w, h = box
-        Xpos = int(x+(w/2))
-        Ypos = int(y+(h/2))
-        cor = int((-0.1122*Xpos) - 2.1596)
-        Xdpos = Xpos+cor
-        Rawdis = Depf[Ypos, Xdpos]
-        while Rawdis == 0 and ReCheck < 10 :
-            Sd1 = rd.randint(-12,12)
-            Sd2 = rd.randint(-12,12)
-            Rawdis = Depf[Ypos+Sd1, Xdpos+Sd2]
-            print("ReCheck distance...." + str(ReCheck))
-            time.sleep(2)
-            ReCheck += 1
-        if Rawdis == 0 :
-            print("Error detected in distance measurement")
-            StartPoint.extend([(x, y)])
-            EndPoint.extend([(x+w, y+h)])
-            i += 1
+    print("Joy Mode")
+    SwitchMode = 0
+    while True :
+        Rpwm = int(j[1]*Max_PMW) - int(j[0]*Max_PMW)
+        Lpwm = int(j[1]*Max_PMW) + int(j[0]*Max_PMW)
+        if Rpwm > Max_PMW :
+            Rpwm = Max_PMW
+        elif Rpwm < -Max_PMW :
+            Rpwm = -Max_PMW
+        if Lpwm > Max_PMW :
+            Lpwm = Max_PMW
+        elif Lpwm < -Max_PMW :
+            Lpwm = -Max_PMW
+        if Lpwm >= 0 :
+            if Lpwm >= 100 :
+                charL = "+" + str(Lpwm)
+            if Lpwm < 100 and Lpwm >=10 :
+                charL = "+0" + str(Lpwm)
+            if Lpwm < 10 :
+                charL = "+00" + str(Lpwm)
+        if Lpwm < 0 :
+            Lpwm = -Lpwm
+            if Lpwm >= 100 :
+                charL = "-" + str(Lpwm)
+            if Lpwm < 100 and Lpwm >=10 :
+                charL = "-0" + str(Lpwm)
+            if Lpwm < 10 :
+                charL = "-00" + str(Lpwm)
+        if Rpwm >= 0 :
+            if Rpwm >= 100 :
+                charR = "+" + str(Rpwm)
+            if Rpwm < 100 and Rpwm >=10 :
+                charR = "+0" + str(Rpwm)
+            if Rpwm < 10 :
+                charR = "+00" + str(Rpwm)
+        if Rpwm < 0 :
+            Rpwm = -Rpwm
+            if Rpwm >= 100 :
+                charR = "-" + str(Rpwm)
+            if Rpwm < 100 and Rpwm >=10 :
+                charR = "-0" + str(Rpwm)
+            if Rpwm < 10 :
+                charR = "-00" + str(Rpwm)
+        char = "j" + charL + charR +'\n'
+        ser2.write(str.encode(char))
+        if SwitchMode == 1 :
+            time.sleep(0.1)
+            SwitchMode = 0
             break
-        DeltaCenter = m.sqrt(((Xpos-320)**2)+((Ypos-240)**2))
-        dis = Rawdis + (0.08*DeltaCenter)
-        print(str(dis))
-        Xdis = (dis*m.cos((m.pi*(11/30))+((m.pi/2400)*(x+(w/2)))))-25     #+((320-Xpos)*0.062)
-        Ydis = 160+(dis*m.cos((m.pi*(5/36))+((m.pi/2160)*(y+(h/2)))))
-        Zdis = 565-(dis*m.sin((m.pi*(5/36))+((m.pi/2160)*(y+(h/2)))))
-        # Adis = int(dis)
-        XAdis = int(Xdis)
-        YAdis = int(Ydis)
-        ZAdis = int(Zdis)
-        # # Put Text on screen
-        # cv.putText(imgcap,str(Adis),(10,20),cv.FONT_HERSHEY_DUPLEX,0.5,(0,0,0),1)
-        # cv.putText(imgcap,str(XAdis),(10,40),cv.FONT_HERSHEY_DUPLEX,0.5,(255,0,0),1)
-        # cv.putText(imgcap,str(YAdis),(10,60),cv.FONT_HERSHEY_DUPLEX,0.5,(0,255,0),1)
-        # cv.putText(imgcap,str(ZAdis),(10,80),cv.FONT_HERSHEY_DUPLEX,0.5,(0,0,255),1)
-        if XAdis >= 0 :
-            if XAdis >= 100 :
-                charDataX = "+" + str(XAdis) 
-            if XAdis < 100 and XAdis >= 10 :
-                charDataX = "+0" + str(XAdis) 
-            if XAdis < 10 :
-                charDataX = "+00" + str(XAdis) 
-        if XAdis < 0 :
-            XAdis = -1*XAdis
-            if XAdis >= 100 :
-                charDataX = "-" + str(XAdis) 
-            if XAdis < 100 and XAdis >= 10 :
-                charDataX = "-0" + str(XAdis) 
-            if XAdis < 10 :
-                charDataX = "-00" + str(XAdis) 
-        if YAdis >= 0 :
-            if YAdis >= 100 :
-                charDataY = "-" + str(YAdis) 
-            if YAdis < 100 and YAdis >= 10 :
-                charDataY = "-0" + str(YAdis) 
-            if YAdis < 10 :
-                charDataY = "-00" + str(YAdis) 
-        if YAdis < 0 :
-            YAdis = -1*YAdis
-            if YAdis >= 100 :
-                charDataY = "+" + str(YAdis) 
-            if YAdis < 100 and YAdis >= 10 :
-                charDataY = "+0" + str(YAdis) 
-            if YAdis < 10 :
-                charDataY = "+00" + str(YAdis)
-        if ZAdis >= 0 :
-            if ZAdis >= 100 :
-                charDataZ = "+" + str(ZAdis)
-            if ZAdis < 100 and ZAdis >= 10 :
-                charDataZ = "+0" + str(ZAdis) 
-            if ZAdis < 10 :
-                charDataZ = "+00" + str(ZAdis) 
-        if ZAdis < 0 :
-            ZAdis = -1*ZAdis
-            if ZAdis >= 100 :
-                charDataZ = "-" + str(ZAdis) 
-            if ZAdis < 100 and ZAdis >= 10 :
-                charDataZ = "-0" + str(ZAdis)
-            if ZAdis < 10 :
-                charDataZ = "-00" + str(ZAdis)
-        charCon = charDataX + charDataY + charDataZ + '\n'
-        print(charCon)
-        ser1.write(str.encode(charCon))
-        while True :
-            Stopby = ser1.readline().decode("utf-8").strip()
-            if Stopby == 'StandBy' :
-                print(Stopby)
-                endcommand = 1
-                break
-            if Stopby == 'OutRange' :
-                print(Stopby)
+
+    dc = DepthCamera()
+    Endprocess = 0
+
+    time.sleep(1)
+    print("Auto Mode")
+    while True:
+        ret, Rawdepf, Rawcolf = dc.get_frame()
+        if ret == False:
+            break
+        Fsdepf = Rawdepf[100:620, 132:1148]
+        Fscolf = cv2.resize(Rawcolf, [1016,520])
+        Depf = Fsdepf[20:500, 188:828]
+        Colf = Fscolf[20:500, 188:828]
+        # Depf = cv2.resize(Rsdepf, [320,320])
+        # Colf = cv2.resize(Rscolf, [320,320])
+        Def = 1
+        ReCheck = 1
+        endcommand = 0
+        j = 0
+        for j in range(i) :
+            cv2.rectangle(Colf, StartPoint[j], EndPoint[j], (0, 255, 0), -1)
+        time.sleep(1)
+        classes, scores, boxes = model.detect(Colf, Conf_threshold, NMS_threshold)
+        for (classid, score, box) in zip(classes, scores, boxes):
+            Def = 0
+            color = COLORS[int(classid) % len(COLORS)]
+            label = "%s : %f" % (class_name[classid], score)
+            cv2.rectangle(Colf, box, color, 2)
+            cv2.putText(Colf, label, (box[0], box[1]-10),cv2.FONT_HERSHEY_COMPLEX, 0.3, color, 1)
+            x, y, w, h = box
+            Xpos = int(x+(w/2))
+            Ypos = int(y+(h/2))
+            cor = int((-0.1122*Xpos) - 2.1596)
+            Xdpos = Xpos+cor
+            Rawdis = Depf[Ypos, Xdpos]
+            while Rawdis == 0 and ReCheck < 10 :
+                Sd1 = rd.randint(-12,12)
+                Sd2 = rd.randint(-12,12)
+                Rawdis = Depf[Ypos+Sd1, Xdpos+Sd2]
+                print("ReCheck distance...." + str(ReCheck))
+                time.sleep(2)
+                ReCheck += 1
+            if Rawdis == 0 :
+                print("Error detected in distance measurement")
                 StartPoint.extend([(x, y)])
                 EndPoint.extend([(x+w, y+h)])
                 i += 1
-                endcommand = 1
                 break
-        if endcommand == 1 :
+            DeltaCenter = m.sqrt(((Xpos-320)**2)+((Ypos-240)**2))
+            dis = Rawdis + (0.08*DeltaCenter)
+            # print(str(dis))
+            Xdis = (dis*m.cos((m.pi*(11/30))+((m.pi/2400)*(x+(w/2)))))-25     #+((320-Xpos)*0.062)
+            Ydis = 160+(dis*m.cos((m.pi*(5/36))+((m.pi/2160)*(y+(h/2)))))
+            Zdis = 565-(dis*m.sin((m.pi*(5/36))+((m.pi/2160)*(y+(h/2)))))
+            # Adis = int(dis)
+            XAdis = int(Xdis)
+            YAdis = int(Ydis)
+            ZAdis = int(Zdis)
+            # # Put Text on screen
+            # cv.putText(imgcap,str(Adis),(10,20),cv.FONT_HERSHEY_DUPLEX,0.5,(0,0,0),1)
+            # cv.putText(imgcap,str(XAdis),(10,40),cv.FONT_HERSHEY_DUPLEX,0.5,(255,0,0),1)
+            # cv.putText(imgcap,str(YAdis),(10,60),cv.FONT_HERSHEY_DUPLEX,0.5,(0,255,0),1)
+            # cv.putText(imgcap,str(ZAdis),(10,80),cv.FONT_HERSHEY_DUPLEX,0.5,(0,0,255),1)
+            if XAdis >= 0 :
+                if XAdis >= 100 :
+                    charDataX = "+" + str(XAdis) 
+                if XAdis < 100 and XAdis >= 10 :
+                    charDataX = "+0" + str(XAdis) 
+                if XAdis < 10 :
+                    charDataX = "+00" + str(XAdis) 
+            if XAdis < 0 :
+                XAdis = -1*XAdis
+                if XAdis >= 100 :
+                    charDataX = "-" + str(XAdis) 
+                if XAdis < 100 and XAdis >= 10 :
+                    charDataX = "-0" + str(XAdis) 
+                if XAdis < 10 :
+                    charDataX = "-00" + str(XAdis) 
+            if YAdis >= 0 :
+                if YAdis >= 100 :
+                    charDataY = "-" + str(YAdis) 
+                if YAdis < 100 and YAdis >= 10 :
+                    charDataY = "-0" + str(YAdis) 
+                if YAdis < 10 :
+                    charDataY = "-00" + str(YAdis) 
+            if YAdis < 0 :
+                YAdis = -1*YAdis
+                if YAdis >= 100 :
+                    charDataY = "+" + str(YAdis) 
+                if YAdis < 100 and YAdis >= 10 :
+                    charDataY = "+0" + str(YAdis) 
+                if YAdis < 10 :
+                    charDataY = "+00" + str(YAdis)
+            if ZAdis >= 0 :
+                if ZAdis >= 100 :
+                    charDataZ = "+" + str(ZAdis)
+                if ZAdis < 100 and ZAdis >= 10 :
+                    charDataZ = "+0" + str(ZAdis) 
+                if ZAdis < 10 :
+                    charDataZ = "+00" + str(ZAdis) 
+            if ZAdis < 0 :
+                ZAdis = -1*ZAdis
+                if ZAdis >= 100 :
+                    charDataZ = "-" + str(ZAdis) 
+                if ZAdis < 100 and ZAdis >= 10 :
+                    charDataZ = "-0" + str(ZAdis)
+                if ZAdis < 10 :
+                    charDataZ = "-00" + str(ZAdis)
+            charCon = charDataX + charDataY + charDataZ + '\n'
+            print(charCon)
+            ser1.write(str.encode(charCon))
+            SwitchMode = 0
+            while True :
+                Stopby = ser1.readline().decode("utf-8").strip()
+                if Stopby == 'StandBy' :
+                    print(Stopby)
+                    endcommand = 1
+                    break
+                if Stopby == 'OutRange' :
+                    print(Stopby)
+                    StartPoint.extend([(x, y)])
+                    EndPoint.extend([(x+w, y+h)])
+                    i += 1
+                    endcommand = 1
+                    break
+            if endcommand == 1 :
+                break
+        if Def == 1 :
+            i = 0
+            StartPoint.clear()
+            EndPoint.clear()
+            print('Move Forward')
+            CommandMove = "a" '+020nnnn' + '\n'
+            ser2.write(str.encode(CommandMove))
+            SwitchMode = 0
+            while True :
+                Stopby = ser2.readline().decode("utf-8").strip()
+                if Stopby == 'StandBy' :
+                    print(Stopby)
+                    break
+            Endprocess += 1
+        # # In case want to show the image
+        # cv2.imshow('Colf', Colf)
+        # key = cv2.waitKey(1)
+        # if key == ord('q'):
+        #     break
+        if Endprocess == 10 :
+            print('End Process')
             break
-    if Def == 1 :
-        i = 0
-        StartPoint.clear()
-        EndPoint.clear()
-        print('Move Forward')
-        CommandMove = '+030' + '\n'
-        ser2.write(str.encode(CommandMove))
-        while True :
-            Stopby = ser2.readline().decode("utf-8").strip()
-            if Stopby == 'StandBy' :
-                print(Stopby)
-                break
-        Endprocess += 1
-        time.sleep(1)
-    if Endprocess == 10 :
-        print('End Process')
-        break
-    # In case want to show the image
-    cv2.imshow('Colf', Colf)
-    key = cv2.waitKey(1)
-    if key == ord('q'):
-        break
-dc.release()
-cv2.destroyAllWindows()
+        if SwitchMode == 1 :
+            time.sleep(0.1)
+            SwitchMode = 0
+            break
+    dc.release()
+    cv2.destroyAllWindows()
